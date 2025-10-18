@@ -1,8 +1,5 @@
 from flask import Flask, request
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import requests
-import asyncio
 import threading
 import time
 import os
@@ -14,9 +11,6 @@ RENDER_URL = "https://ai-bgc7.onrender.com"
 
 # إنشاء تطبيق Flask
 app = Flask(__name__)
-
-# إنشاء تطبيق تيليجرام
-telegram_app = Application.builder().token(TELEGRAM_TOKEN).build()
 
 def get_ai_response(message):
     """الحصول على رد من الذكاء الاصطناعي"""
@@ -45,55 +39,59 @@ def get_ai_response(message):
     except Exception as e:
         return "تعذر الاتصال بالخدمة."
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """معالجة الرسائل الواردة"""
-    text = update.message.text.strip()
+def send_telegram_message(chat_id, text):
+    """إرسال رسالة إلى تيليجرام"""
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    data = {
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": "HTML"
+    }
+    requests.post(url, json=data)
+
+def process_message(chat_id, text):
+    """معالجة الرسالة وإرسال الرد"""
+    if text.startswith("/start"):
+        response_text = (
+            "مرحباً! أنا بوت الذكاء الاصطناعي.\n\n"
+            "📝 <b>المطور:</b> @Mik_emm\n\n"
+            "<b>طريقة الاستخدام:</b>\n"
+            "• ai + سؤالك\n"
+            "• emm + سؤالك\n\n"
+            "<b>أمثلة:</b>\n"
+            "<code>ai ما هو الذكاء الاصطناعي؟</code>\n"
+            "<code>emm اشرح لي البرمجة</code>\n\n"
+            "تابعنا على: https://t.me/Mik_emm"
+        )
+        send_telegram_message(chat_id, response_text)
     
-    if text.startswith("ai "):
+    elif text.startswith("/test"):
+        send_telegram_message(chat_id, "جاري اختبار البوت...")
+        response = get_ai_response("قل test successful")
+        send_telegram_message(chat_id, f"✅ البوت يعمل بشكل صحيح!\nالرد: {response}")
+    
+    elif text.startswith("/status"):
+        current_time = time.strftime("%Y-%m-%d %H:%M:%S")
+        send_telegram_message(chat_id, f"🟢 البوت يعمل\n⏰ الوقت: {current_time}")
+    
+    elif text.startswith("ai "):
         prompt = text[3:].strip()
         if prompt:
-            await update.message.reply_text("جاري المعالجة...")
+            send_telegram_message(chat_id, "جاري المعالجة...")
             response = get_ai_response(prompt)
-            await update.message.reply_text(response)
+            send_telegram_message(chat_id, response)
     
     elif text.startswith("emm "):
         prompt = text[4:].strip()
         if prompt:
-            await update.message.reply_text("جاري المعالجة...")
+            send_telegram_message(chat_id, "جاري المعالجة...")
             response = get_ai_response(prompt)
-            await update.message.reply_text(response)
-
-async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """بدء البوت - للجميع"""
-    await update.message.reply_text(
-        "مرحباً! أنا بوت الذكاء الاصطناعي.\n\n"
-        "📝 **المطور:** @Mik_emm\n\n"
-        "**طريقة الاستخدام:**\n"
-        "• ai + سؤالك\n"
-        "• emm + سؤالك\n\n"
-        "**أمثلة:**\n"
-        "`ai ما هو الذكاء الاصطناعي؟`\n"
-        "`emm اشرح لي البرمجة`\n\n"
-        "تابعنا على: https://t.me/Mik_emm"
-    )
-
-async def test_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """اختبار البوت - للجميع"""
-    await update.message.reply_text("جاري اختبار البوت...")
-    response = get_ai_response("قل test successful")
-    await update.message.reply_text(f"✅ البوت يعمل بشكل صحيح!\nالرد: {response}")
-
-async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """عرض حالة البوت - للجميع"""
-    from datetime import datetime
-    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    await update.message.reply_text(f"🟢 البوت يعمل\n⏰ الوقت: {current_time}")
+            send_telegram_message(chat_id, response)
 
 def keep_alive():
     """نبضة حياة للحفاظ على البوت نشطاً"""
     while True:
         try:
-            # إرسال طلب إلى نفس التطبيق للحفاظ على نشاطه
             requests.get(RENDER_URL, timeout=10)
             print(f"💓 نبضة حياة - {time.strftime('%Y-%m-%d %H:%M:%S')}")
             time.sleep(300)  # كل 5 دقائق
@@ -101,55 +99,59 @@ def keep_alive():
             print(f"خطأ في نبضة الحياة: {e}")
             time.sleep(300)
 
-# إضافة handlers للتطبيق
-telegram_app.add_handler(CommandHandler("start", start_command))
-telegram_app.add_handler(CommandHandler("test", test_command))
-telegram_app.add_handler(CommandHandler("status", status_command))
-telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-# routes لـ Flask
 @app.route('/')
 def home():
     return "🤖 البوت يعمل! المطور: @Mik_emm"
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    """معالجة طلبات Webhook"""
-    json_data = request.get_json()
-    update = Update.de_json(json_data, telegram_app.bot)
-    telegram_app.update_queue.put_nowait(update)
-    return 'OK'
-
-async def setup_webhook():
-    """إعداد Webhook"""
-    webhook_url = f"{RENDER_URL}/webhook"
-    await telegram_app.bot.set_webhook(webhook_url)
-    print(f"✅ تم إعداد Webhook: {webhook_url}")
-
-def start_bot():
-    """بدء تشغيل البوت في thread منفصل"""
-    async def run_bot():
-        await telegram_app.initialize()
-        await setup_webhook()
-        await telegram_app.start()
-        print("🚀 البوت يعمل الآن!")
-        print("👤 المطور: @Mik_emm")
-        print("🌐 Webhook مفعل...")
+    """معالجة طلبات Webhook من تيليجرام"""
+    try:
+        data = request.get_json()
         
-        # انتظار إلى الأبد
-        while True:
-            await asyncio.sleep(3600)
+        if 'message' in data:
+            message = data['message']
+            chat_id = message['chat']['id']
+            text = message.get('text', '').strip()
+            
+            if text:
+                # معالجة الرسالة في thread منفصل
+                thread = threading.Thread(target=process_message, args=(chat_id, text))
+                thread.daemon = True
+                thread.start()
+        
+        return 'OK'
     
-    asyncio.run(run_bot())
+    except Exception as e:
+        print(f"خطأ في webhook: {e}")
+        return 'OK'
+
+def setup_webhook():
+    """إعداد Webhook على تيليجرام"""
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/setWebhook"
+        webhook_url = f"{RENDER_URL}/webhook"
+        data = {"url": webhook_url}
+        
+        response = requests.post(url, json=data)
+        print(f"✅ تم إعداد Webhook: {webhook_url}")
+        print(f"📋 استجابة تيليجرام: {response.json()}")
+    
+    except Exception as e:
+        print(f"❌ خطأ في إعداد Webhook: {e}")
 
 if __name__ == "__main__":
+    # إعداد Webhook
+    setup_webhook()
+    
     # بدء نبضة الحياة في thread منفصل
     keep_alive_thread = threading.Thread(target=keep_alive, daemon=True)
     keep_alive_thread.start()
     
-    # بدء البوت في thread منفصل
-    bot_thread = threading.Thread(target=start_bot, daemon=True)
-    bot_thread.start()
+    print("🚀 بدء تشغيل البوت...")
+    print("👤 المطور: @Mik_emm")
+    print("🌐 Webhook مفعل...")
+    print("💓 نبضات الحياة مفعلة...")
     
     # تشغيل خادم Flask
     port = int(os.environ.get('PORT', 5000))
