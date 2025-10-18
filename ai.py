@@ -25,11 +25,13 @@ def get_ai_response(message):
             "Content-Type": "application/json"
         }
         
+        # العودة للنموذج الأساسي مع تحسينات
         data = {
-            "model": "llama-3.1-8b-instant",
+            "model": "llama-3.1-8b-instant",  # النموذج الأساسي الموثوق
             "messages": [{"role": "user", "content": message}],
             "temperature": 0.7,
-            "max_tokens": 1500
+            "max_tokens": 1500,
+            "top_p": 1
         }
         
         print(f"📤 إرسال طلب إلى Groq: {message}")
@@ -42,14 +44,25 @@ def get_ai_response(message):
             print(f"✅ الرد المستلم: {response_text[:100]}...")
             return response_text
         else:
-            error_msg = f"خطأ في الخادم: {response.status_code}"
-            print(f"❌ {error_msg}")
-            return "⚠️ حدث خطأ في الخادم. حاول مرة أخرى."
+            print(f"❌ خطأ في الخادم: {response.status_code} - {response.text}")
             
+            # محاولة نموذج بديل إذا فشل الأول
+            data["model"] = "mixtral-8x7b-32768"
+            response = requests.post(url, json=data, headers=headers, timeout=30)
+            
+            if response.status_code == 200:
+                result = response.json()
+                response_text = result['choices'][0]['message']['content']
+                print(f"✅ الرد المستلم (النموذج البديل): {response_text[:100]}...")
+                return response_text
+            else:
+                return "⚠️ حدث خطأ في الخادم. حاول مرة أخرى."
+            
+    except requests.exceptions.Timeout:
+        return "⏰ انتهت مهلة الاتصال. جرب سؤالاً أقصر."
     except Exception as e:
-        error_msg = f"تعذر الاتصال بالخدمة: {str(e)}"
-        print(f"❌ {error_msg}")
-        return "⚠️ تعذر الاتصال بالخدمة. تأكد من اتصالك بالإنترنت."
+        print(f"❌ خطأ في الاتصال: {e}")
+        return "⚠️ تعذر الاتصال بالخدمة."
 
 def send_telegram_message(chat_id, text):
     """إرسال رسالة إلى تيليجرام"""
@@ -68,25 +81,24 @@ def send_telegram_message(chat_id, text):
 
 def process_message(chat_id, text, chat_type):
     """معالجة الرسالة وإرسال الرد"""
-    print(f"🔍 معالجة رسالة من {chat_id} في {chat_type}: {text}")
+    print(f"🔍 معالجة رسالة من {chat_id}: {text}")
     
     try:
         text_lower = text.lower().strip()
         
         # في المحادثات الخاصة
         if chat_type == "private":
-            # أوامر التحكم
-            if text_lower in ["تشغيل", "تفعيل", "ابدأ", "/on"]:
+            if text_lower in ["تشغيل", "تفعيل", "ابدأ"]:
                 user_states[chat_id] = True
-                send_telegram_message(chat_id, "✅ تم تفعيل الوضع الدائم! الآن يمكنك إرسال أي رسالة وسأرد عليك مباشرة.\n\nلإيقاف الرد التلقائي: اكتب 'ايقاف'")
+                send_telegram_message(chat_id, "✅ تم تفعيل الوضع الدائم! الآن أرسل أي رسالة وسأرد مباشرة.")
                 return
             
-            elif text_lower in ["ايقاف", "إيقاف", "توقف", "/off"]:
+            elif text_lower in ["ايقاف", "إيقاف", "توقف"]:
                 user_states[chat_id] = False
-                send_telegram_message(chat_id, "🛑 تم إيقاف الوضع الدائم.\n\nللاستخدام: اكتب 'ai' أو 'emm' ثم رسالتك")
+                send_telegram_message(chat_id, "🛑 تم إيقاف الوضع الدائم.")
                 return
             
-            # إذا كان الوضع الدائم مفعل
+            # الوضع الدائم
             elif user_states.get(chat_id, False):
                 send_telegram_message(chat_id, "⏳ جاري المعالجة...")
                 response = get_ai_response(text)
@@ -95,7 +107,6 @@ def process_message(chat_id, text, chat_type):
             
             # الأوامر العادية
             elif text_lower.startswith("ai ") or text_lower.startswith("emm "):
-                # تحديد البادئة واستخراج النص
                 if text_lower.startswith("ai "):
                     prompt = text[3:].strip()
                 else:
@@ -105,66 +116,33 @@ def process_message(chat_id, text, chat_type):
                     send_telegram_message(chat_id, "⏳ جاري المعالجة...")
                     response = get_ai_response(prompt)
                     send_telegram_message(chat_id, response)
-                else:
-                    send_telegram_message(chat_id, "❌ يرجى كتابة رسالة بعد 'ai' أو 'emm'")
                 return
             
             elif text_lower == "/start":
-                response_text = (
+                send_telegram_message(chat_id,
                     "🚀 <b>مرحباً! أنا بوت الذكاء الاصطناعي</b>\n\n"
                     "📝 <b>المطور:</b> @Mik_emm\n\n"
-                    "💬 <b>في المحادثات الخاصة:</b>\n"
-                    "• <code>ai سؤالك</code> - رد فوري\n"
-                    "• <code>emm سؤالك</code> - رد فوري\n"
-                    "• <code>تشغيل</code> - تفعيل الرد التلقائي\n"
-                    "• <code>ايقاف</code> - إيقاف الرد التلقائي\n\n"
-                    "👥 <b>في المجموعات:</b>\n"
-                    "• <code>ai سؤالك</code> - للجميع\n"
-                    "• <code>emm سؤالك</code> - للجميع\n\n"
-                    "🔧 <b>أوامر إضافية:</b>\n"
-                    "• /test - اختبار البوت\n"
-                    "• /status - حالة البوت\n\n"
-                    "📢 <b>تابعنا:</b> https://t.me/Mik_emm"
+                    "💬 <b>الاستخدام:</b>\n"
+                    "• ai سؤالك\n"
+                    "• emm سؤالك\n"
+                    "• تشغيل - للوضع الدائم\n"
+                    "• ايقاف - لإيقاف الدائم\n\n"
+                    "💻 <b>للبرمجة:</b>\n"
+                    "<code>ai كود C لجمع عددين</code>\n"
+                    "<code>emm شرح Python</code>\n\n"
+                    "📢 <b>القناة:</b> @Mik_emm"
                 )
-                send_telegram_message(chat_id, response_text)
                 return
             
             elif text_lower == "/test":
                 send_telegram_message(chat_id, "🔍 جاري اختبار البوت...")
-                response = get_ai_response("أجب بجملة واحدة: الاختبار ناجح")
-                send_telegram_message(chat_id, f"✅ <b>نتيجة الاختبار:</b>\n{response}")
-                return
-            
-            elif text_lower == "/status":
-                current_time = time.strftime("%Y-%m-%d %H:%M:%S")
-                status = "🟢 مفعل" if user_states.get(chat_id, False) else "🔴 متوقف"
-                send_telegram_message(chat_id, 
-                    f"<b>حالة البوت:</b>\n"
-                    f"• الوضع الدائم: {status}\n"
-                    f"• ⏰ الوقت: {current_time}\n"
-                    f"• 👤 المستخدم: {chat_id}"
-                )
-                return
-            
-            else:
-                # إذا لم يكن أمر معروف، نعطي التعليمات
-                send_telegram_message(chat_id,
-                    "🤖 <b>طريقة الاستخدام:</b>\n\n"
-                    "💬 <b>للرد الفوري:</b>\n"
-                    "<code>ai سؤالك</code> أو <code>emm سؤالك</code>\n\n"
-                    "🔄 <b>للتفعيل الدائم:</b>\n"
-                    "اكتب <code>تشغيل</code> ثم أرسل أي رسالة\n\n"
-                    "📝 <b>أمثلة:</b>\n"
-                    "<code>ai اشرح لي البرمجة</code>\n"
-                    "<code>emm كيف يعمل الذكاء الاصطناعي</code>\n"
-                    "<code>تشغيل</code> - ثم أرسل أي سؤال مباشرة"
-                )
+                response = get_ai_response("أكتب كود بسيط في C لجمع عددين وأظهر النتيجة")
+                send_telegram_message(chat_id, f"<b>النتيجة:</b>\n{response}")
                 return
         
         # في المجموعات
         else:
             if text_lower.startswith("ai ") or text_lower.startswith("emm "):
-                # تحديد البادئة واستخراج النص
                 if text_lower.startswith("ai "):
                     prompt = text[3:].strip()
                 else:
@@ -174,57 +152,50 @@ def process_message(chat_id, text, chat_type):
                     send_telegram_message(chat_id, "⏳ جاري المعالجة...")
                     response = get_ai_response(prompt)
                     send_telegram_message(chat_id, response)
-                else:
-                    send_telegram_message(chat_id, "❌ يرجى كتابة رسالة بعد 'ai' أو 'emm'")
                 return
             
             elif text_lower == "/start":
                 send_telegram_message(chat_id,
                     "👋 <b>أهلاً بالجميع!</b>\n\n"
-                    "🤖 أنا بوت الذكاء الاصطناعي\n\n"
-                    "📝 <b>طريقة الاستخدام في المجموعة:</b>\n"
-                    "• <code>ai سؤالك</code>\n"
-                    "• <code>emm سؤالك</code>\n\n"
-                    "🔧 <b>مثال:</b>\n"
-                    "<code>ai ما هو الذكاء الاصطناعي؟</code>\n\n"
+                    "🤖 بوت الذكاء الاصطناعي\n\n"
+                    "📝 <b>الاستخدام:</b>\n"
+                    "• ai سؤالك\n"
+                    "• emm سؤالك\n\n"
                     "📢 <b>المطور:</b> @Mik_emm"
                 )
                 return
     
     except Exception as e:
-        error_msg = f"❌ خطأ في المعالجة: {str(e)}"
-        print(error_msg)
-        send_telegram_message(chat_id, "⚠️ حدث خطأ أثناء المعالجة. حاول مرة أخرى.")
+        print(f"❌ خطأ: {e}")
+        send_telegram_message(chat_id, "⚠️ حدث خطأ. حاول مرة أخرى.")
 
 def keep_alive():
-    """نبضة حياة للحفاظ على البوت نشطاً"""
+    """نبضة حياة"""
     while True:
         try:
-            response = requests.get(RENDER_URL, timeout=10)
-            print(f"💓 نبضة حياة - {time.strftime('%Y-%m-%d %H:%M:%S')} - الحالة: {response.status_code}")
-        except Exception as e:
-            print(f"⚠️ خطأ في نبضة الحياة: {e}")
-        time.sleep(300)  # كل 5 دقائق
+            requests.get(RENDER_URL, timeout=10)
+            print(f"💓 نبضة حياة - {time.strftime('%Y-%m-%d %H:%M:%S')}")
+        except:
+            pass
+        time.sleep(300)
 
 @app.route('/')
 def home():
-    return "🤖 البوت يعمل! المطور: @Mik_emm"
+    return "🤖 البوت يعمل! @Mik_emm"
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    """معالجة طلبات Webhook من تيليجرام"""
+    """معالجة Webhook"""
     try:
         data = request.get_json()
-        print(f"📩 طلب Webhook مستلم: {json.dumps(data, ensure_ascii=False)[:200]}...")
         
         if 'message' in data:
             message = data['message']
             chat_id = message['chat']['id']
             text = message.get('text', '').strip()
-            chat_type = message['chat']['type']  # private, group, supergroup
+            chat_type = message['chat']['type']
             
             if text:
-                # معالجة الرسالة في thread منفصل
                 thread = threading.Thread(target=process_message, args=(chat_id, text, chat_type))
                 thread.daemon = True
                 thread.start()
@@ -236,7 +207,7 @@ def webhook():
         return 'OK'
 
 def setup_webhook():
-    """إعداد Webhook على تيليجرام"""
+    """إعداد Webhook"""
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/setWebhook"
         webhook_url = f"{RENDER_URL}/webhook"
@@ -244,25 +215,19 @@ def setup_webhook():
         
         response = requests.post(url, json=data)
         print(f"✅ تم إعداد Webhook: {webhook_url}")
-        print(f"📋 استجابة تيليجرام: {response.json()}")
+        print(f"📋 الاستجابة: {response.json()}")
     
     except Exception as e:
-        print(f"❌ خطأ في إعداد Webhook: {e}")
+        print(f"❌ خطأ في Webhook: {e}")
 
 if __name__ == "__main__":
-    # إعداد Webhook
     setup_webhook()
     
-    # بدء نبضة الحياة في thread منفصل
     keep_alive_thread = threading.Thread(target=keep_alive, daemon=True)
     keep_alive_thread.start()
     
-    print("🚀 بدء تشغيل البوت...")
+    print("🚀 البوت يعمل...")
     print("👤 المطور: @Mik_emm")
-    print("🌐 Webhook مفعل...")
-    print("💓 نبضات الحياة مفعلة...")
-    print("🔄 الوضع الدائم متاح في الخاص...")
     
-    # تشغيل خادم Flask
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
