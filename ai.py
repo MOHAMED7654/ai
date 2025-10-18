@@ -146,10 +146,7 @@ def process_message(chat_id, text, chat_type):
                     "👥 <b>في المجموعات:</b>\n"
                     "• <code>ai سؤالك</code> - للجميع\n"
                     "• <code>emm سؤالك</code> - للجميع\n\n"
-                    "💻 <b>لأسئلة لغة C والبرمجة:</b>\n"
-                    "<code>ai اشرح لي لغة C</code>\n"
-                    "<code>emm كود جمع عددين في C</code>\n"
-                    "<code>ai ما هي المؤشرات في C</code>\n\n"
+                
                     "📢 <b>تابعنا:</b> https://t.me/Mik_emm"
                 )
                 send_telegram_message(chat_id, response_text)
@@ -227,9 +224,7 @@ def process_message(chat_id, text, chat_type):
                     "📝 <b>طريقة الاستخدام في المجموعة:</b>\n"
                     "• <code>ai سؤالك</code>\n"
                     "• <code>emm سؤالك</code>\n\n"
-                    "💻 <b>للبرمجة ولغة C:</b>\n"
-                    "<code>ai شرح لغة C</code>\n"
-                    "<code>emm كود مثال في C</code>\n\n"
+                 
                     "📢 <b>المطور:</b> @Mik_emm"
                 )
                 return
